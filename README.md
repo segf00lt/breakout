@@ -1,8 +1,11 @@
 # Breakout
 
-Writing breakout in go.
+Breakout in go.
 
 ## TODO
 
-- Find efficient way to determine points of intersection
-- Handle collisions
+- Add "Game Over!" and "You Win!" screens, show number of bricks destroyed
+  in "Game Over!"
+- Randomize ball trajectory at start and on paddle impact
+- Improve physics
+- Simplify design
