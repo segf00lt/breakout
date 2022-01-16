@@ -2,7 +2,6 @@ package main
 
 import (
 	"image/color"
-	"math"
 
 	"github.com/faiface/pixel"
 	"github.com/faiface/pixel/imdraw"
@@ -28,18 +27,24 @@ const (
 	BALL_Y = 400
 )
 
-type Wall struct {
-	line pixel.Line
+type Box struct {
+	walls [4]pixel.Line
 }
 
-func (wll *Wall) collision(b *Ball) bool {
-	p := wll.IntersectCircle(b.circle)
+// returns true if ball collides with bottom
+func (box *Box) collision(b *Ball) bool {
+	for i,w := range box.walls {
+		p := w.IntersectCircle(b.circle)
 
-	if p == pixel.ZV {
-		return false
+		if p == pixel.ZV {
+			continue
+		} else if i == 3 {
+			return true
+		}
+
+		b.redirect(w)
 	}
-
-	// calculate appropriate redirection
+	return false
 }
 
 type Brick struct {
@@ -52,6 +57,23 @@ func (brk *Brick) draw(imd *imdraw.IMDraw) {
 	imd.Color = brk.color
 	imd.Push(brk.rect.Min, brk.rect.Max)
 	imd.Rectangle(0)
+}
+
+func (brk *Brick) collision(b *Ball) bool {
+	collide := (brk.rect.IntersectCircle(b.circle) != pixel.ZV)
+	if !collide {
+		return false
+	}
+
+	edges := brk.rect.Edges()
+	for _,e := range edges {
+		collide = (e.IntersectCircle(b.circle) != pixel.ZV)
+		if collide {
+			b.redirect(e)
+		}
+	}
+
+	return true
 }
 
 type Paddle struct {
@@ -71,18 +93,37 @@ func (pdl *Paddle) move(w *pixelgl.Window) {
 	}
 
 	x := w.MousePosition().X 
+
 	if x >= (WIN_W - PADDLE_W) {
 		x = WIN_W - PADDLE_W
 	}
+
 	pdl.rect.Min.X = x
 	pdl.rect.Max.X = x + PADDLE_W
+}
+
+func (pdl *Paddle) collision(b *Ball) bool {
+	collide := (pdl.rect.IntersectCircle(b.circle) != pixel.ZV)
+	if !collide {
+		return false
+	}
+
+	edges := pdl.rect.Edges()
+	for _,e := range edges {
+		collide = (e.IntersectCircle(b.circle) != pixel.ZV)
+		if collide {
+			b.redirect(e)
+		}
+	}
+
+	return true
 }
 
 type Ball struct {
 	circle pixel.Circle
 	color color.Color
+	vect pixel.Vec
 	speed float64
-	angle float64
 }
 
 func (bll *Ball) draw(imd *imdraw.IMDraw) {
@@ -92,11 +133,8 @@ func (bll *Ball) draw(imd *imdraw.IMDraw) {
 }
 
 func (bll *Ball) move() {
-	step_x := math.Cos(bll.angle)
-	step_y := math.Sin(bll.angle)
-
-	bll.circle.Center.X += step_x * bll.speed
-	bll.circle.Center.Y += step_y * bll.speed
+	bll.circle.Center.X += bll.vect.X * bll.speed
+	bll.circle.Center.Y += bll.vect.Y * bll.speed
 }
 
 func (bll *Ball) accelerate() {
@@ -105,7 +143,15 @@ func (bll *Ball) accelerate() {
 	}
 }
 
-func (bll *Ball) redirect(v pixel.Vec) {
+func (bll *Ball) redirect(l pixel.Line) {
+	dx := l.B.X - l.A.X
+
+	switch(dx) {
+	case 0:
+		bll.vect.X *= -1
+	default:
+		bll.vect.Y *= -1
+	}
 }
 
 func run() {
@@ -124,6 +170,11 @@ func run() {
 	}
 
 	win.SetCursorVisible(false)
+
+	// create box
+	box := Box {
+		walls: win.Bounds().Edges(),
+	}
 
 	// create brick rows
 	n_row := 7
@@ -164,8 +215,8 @@ func run() {
 	ball := Ball {
 		circle: pixel.C(pixel.V(BALL_X, BALL_Y), BALL_R),
 		color: pixel.RGB(0.5, 1, 0.5),
+		vect: pixel.V( -0.6662760212798241, -0.7457052121767203),
 		speed: 0.2,
-		angle: -2.3,
 	}
 
 	// imd will draw all our shapes
@@ -175,12 +226,27 @@ func run() {
 		win.Clear(colornames.Skyblue)
 		imd.Clear()
 
+		// collision tests
+		if box.collision(&ball) {
+			return
+		}
+
+		paddle.collision(&ball)
+
+		i := 0
+		for _,b := range bricks {
+			if !b.collision(&ball) {
+				bricks[i] = b
+				i++
+				b.draw(imd)
+			} else {
+				ball.accelerate()
+			}
+		}
+		bricks = bricks[0:i]
+
 		paddle.move(win)
 		ball.move()
-
-		for _,b := range bricks {
-			b.draw(imd)
-		}
 
 		paddle.draw(imd)
 		ball.draw(imd)
